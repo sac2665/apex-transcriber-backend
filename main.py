@@ -59,11 +59,10 @@ def transcribe_with_whisper(audio_b64):
         "Content-Type": "application/json"
     }
 
-    # Log the length of the base64 audio for sanity check
     print("📦 Base64 audio length:", len(audio_b64))
 
     payload = {
-        "version": "a4f8f8d6c3c7b3ed6d0ba63a974b4ca795f5d10c18e3e1a3f94b6f1c0c3f6b1d",
+        "version": "e2f4a83f0de6f3f5a9e7e1db1cccb2a3d45c4a2301bc4863a4856d6bce15b105",  # Base64-enabled Whisper
         "input": {
             "audio": {
                 "data": audio_b64

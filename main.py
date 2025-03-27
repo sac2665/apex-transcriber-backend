@@ -1,7 +1,7 @@
 import os
 import time
-import base64
 import requests
+import subprocess
 import pandas as pd
 from uuid import uuid4
 from fastapi import FastAPI
@@ -47,7 +47,22 @@ def get_video_source_url(video_id, token):
     return mp4_sources[0]["src"] if mp4_sources else None
 
 def extract_audio_from_url(video_url, out_path):
-    os.system(f"ffmpeg -i '{video_url}' -vn -acodec libmp3lame -ar 44100 -ac 2 -ab 192k -f mp3 {out_path}")
+    try:
+        subprocess.run([
+            "ffmpeg",
+            "-y",
+            "-i", video_url,
+            "-vn",
+            "-acodec", "libmp3lame",
+            "-ar", "44100",
+            "-ac", "2",
+            "-b:a", "192k",
+            out_path
+        ], check=True)
+        return True
+    except Exception as e:
+        print("❌ ffmpeg failed:", e)
+        return False
 
 def upload_temp_file(file_path):
     with open(file_path, "rb") as f:
@@ -89,6 +104,7 @@ def transcribe_with_whisper(audio_url):
     if status == "succeeded":
         return prediction["output"]["segments"]
     return []
+
 def extract_cues(transcript):
     data = []
     for segment in transcript:
@@ -129,11 +145,16 @@ async def transcribe(req: TranscriptionRequest):
             return {"error": "Video not found or no suitable source."}
 
         audio_path = f"/tmp/audio_{uuid4().hex}.mp3"
-        extract_audio_from_url(video_url, audio_path)
+        success = extract_audio_from_url(video_url, audio_path)
+        if not success or not os.path.exists(audio_path):
+            return {"error": "Audio extraction failed."}
+
         audio_url = upload_temp_file(audio_path)
         transcript = transcribe_with_whisper(audio_url)
-        df = extract_cues(transcript)
+        if not transcript:
+            return {"error": "Transcription failed or returned empty."}
 
+        df = extract_cues(transcript)
         filename = f"output_{uuid4().hex}.xlsx"
         filepath = f"/tmp/{filename}"
         df.to_excel(filepath, index=False)

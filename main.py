@@ -66,7 +66,6 @@ def transcribe_with_whisper(audio_b64):
         "input": {
             "audio": {
                 "data": audio_b64
-            }
         }
     }
 

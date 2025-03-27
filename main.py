@@ -62,10 +62,9 @@ def transcribe_with_whisper(audio_b64):
     print("📦 Base64 audio length:", len(audio_b64))
 
     payload = {
-        "version": "e2f4a83f0de6f3f5a9e7e1db1cccb2a3d45c4a2301bc4863a4856d6bce15b105",  # Base64-enabled Whisper
+        "version": "e2f4a83f0de6f3f5a9e7e1db1cccb2a3d45c4a2301bc4863a4856d6bce15b105",
         "input": {
-            "audio": {
-                "data": audio_b64
+            "audio": audio_b64  # <-- changed here
         }
     }
 

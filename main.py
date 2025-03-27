@@ -58,22 +58,44 @@ def transcribe_with_whisper(audio_b64):
         "Authorization": f"Token {REPLICATE_API_TOKEN}",
         "Content-Type": "application/json"
     }
+
+    # Log the length of the base64 audio for sanity check
+    print("📦 Base64 audio length:", len(audio_b64))
+
     payload = {
         "version": "a4f8f8d6c3c7b3ed6d0ba63a974b4ca795f5d10c18e3e1a3f94b6f1c0c3f6b1d",
-        "input": {"audio": {"data": audio_b64}}
+        "input": {
+            "audio": {
+                "data": audio_b64
+            }
+        }
     }
-    response = requests.post(endpoint, headers=headers, json=payload)
-    response.raise_for_status()
+
+    print("📤 Sending payload to Replicate...")
+
+    try:
+        response = requests.post(endpoint, headers=headers, json=payload)
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as err:
+        print("❌ Replicate API Error:", err)
+        print("📄 Response body:", response.text)
+        raise
+
     prediction = response.json()
     status = prediction["status"]
     prediction_url = prediction["urls"]["get"]
+
+    print("⏳ Waiting for transcription to finish...")
+
     while status not in ["succeeded", "failed"]:
         time.sleep(5)
         poll = requests.get(prediction_url, headers=headers)
         poll.raise_for_status()
         prediction = poll.json()
         status = prediction["status"]
+
     if status == "succeeded":
+        print("✅ Transcription complete!")
         return [
             {
                 "start": int(s["start"]),
@@ -82,6 +104,7 @@ def transcribe_with_whisper(audio_b64):
             } for s in prediction["output"]["segments"]
         ]
     else:
+        print("❌ Transcription failed:", prediction)
         return []
 
 def extract_cues(transcript):

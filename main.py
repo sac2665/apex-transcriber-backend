@@ -67,7 +67,11 @@ def transcribe_with_whisper(audio_url):
     }
     payload = {
         "version": "a4f8f8d6c3c7b3ed6d0ba63a974b4ca795f5d10c18e3e1a3f94b6f1c0c3f6b1d",
-        "input": {"audio": audio_url}
+        "input": {
+            "audio": {
+                "url": audio_url
+            }
+        }
     }
     response = requests.post(endpoint, headers=headers, json=payload)
     response.raise_for_status()
@@ -85,7 +89,6 @@ def transcribe_with_whisper(audio_url):
     if status == "succeeded":
         return prediction["output"]["segments"]
     return []
-
 def extract_cues(transcript):
     data = []
     for segment in transcript:

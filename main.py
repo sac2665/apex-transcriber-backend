@@ -80,12 +80,9 @@ def transcribe_with_whisper(audio_url):
         "Authorization": f"Token {REPLICATE_API_TOKEN}",
         "Content-Type": "application/json"
     }
-    payload = {
-        "version": "a4f8f8d6c3c7b3ed6d0ba63a974b4ca795f5d10c18e3e1a3f94b6f1c0c3f6b1d",
+    "version": "a4f8f8d6c3c7b3ed6d0ba63a974b4ca795f5d10c18e3e1a3f94b6f1c0c3f6b1d",
         "input": {
-            "audio": {
-                "url": audio_url
-            }
+            "audio": audio_url  
         }
     }
     response = requests.post(endpoint, headers=headers, json=payload)

@@ -1,14 +1,15 @@
 import os
-import requests
-import pandas as pd
 import time
 import base64
+import requests
+import pandas as pd
+from uuid import uuid4
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from uuid import uuid4
-from fastapi.responses import FileResponse
 
+# ENVIRONMENT VARIABLES
 BRIGHTCOVE_ACCOUNT_ID = os.getenv("BRIGHTCOVE_ACCOUNT_ID")
 BRIGHTCOVE_CLIENT_ID = os.getenv("BRIGHTCOVE_CLIENT_ID")
 BRIGHTCOVE_CLIENT_SECRET = os.getenv("BRIGHTCOVE_CLIENT_SECRET")
@@ -45,44 +46,34 @@ def get_video_source_url(video_id, token):
     mp4_sources = [s for s in sources if s.get("container") in ["MP4", "MOV"]]
     return mp4_sources[0]["src"] if mp4_sources else None
 
-def download_and_encode_audio(video_url):
-    print("🎧 Downloading audio from:", video_url)
-    temp_path = f"/tmp/audio_{uuid4().hex}.mp3"
-    os.system(f"ffmpeg -i '{video_url}' -vn -acodec libmp3lame -ar 44100 -ac 2 -ab 192k -f mp3 {temp_path}")
-    with open(temp_path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+def extract_audio_from_url(video_url, out_path):
+    os.system(f"ffmpeg -i '{video_url}' -vn -acodec libmp3lame -ar 44100 -ac 2 -ab 192k -f mp3 {out_path}")
 
-def transcribe_with_whisper(audio_b64):
+def upload_temp_file(file_path):
+    with open(file_path, "rb") as f:
+        files = {"file": f}
+        response = requests.post("https://tmpfiles.org/api/v1/upload", files=files)
+        response.raise_for_status()
+        raw_url = response.json()["data"]["url"].strip(";")
+        if "/dl/" not in raw_url:
+            raw_url = raw_url.replace("https://tmpfiles.org/", "https://tmpfiles.org/dl/")
+        return raw_url
+
+def transcribe_with_whisper(audio_url):
     endpoint = "https://api.replicate.com/v1/predictions"
     headers = {
         "Authorization": f"Token {REPLICATE_API_TOKEN}",
         "Content-Type": "application/json"
     }
-
-    print("📦 Base64 audio length:", len(audio_b64))
-
     payload = {
-        "version": "e2f4a83f0de6f3f5a9e7e1db1cccb2a3d45c4a2301bc4863a4856d6bce15b105",
-        "input": {
-            "audio": audio_b64  # <-- changed here
-        }
+        "version": "a4f8f8d6c3c7b3ed6d0ba63a974b4ca795f5d10c18e3e1a3f94b6f1c0c3f6b1d",
+        "input": {"audio": audio_url}
     }
-
-    print("📤 Sending payload to Replicate...")
-
-    try:
-        response = requests.post(endpoint, headers=headers, json=payload)
-        response.raise_for_status()
-    except requests.exceptions.HTTPError as err:
-        print("❌ Replicate API Error:", err)
-        print("📄 Response body:", response.text)
-        raise
-
+    response = requests.post(endpoint, headers=headers, json=payload)
+    response.raise_for_status()
     prediction = response.json()
-    status = prediction["status"]
     prediction_url = prediction["urls"]["get"]
-
-    print("⏳ Waiting for transcription to finish...")
+    status = prediction["status"]
 
     while status not in ["succeeded", "failed"]:
         time.sleep(5)
@@ -92,17 +83,8 @@ def transcribe_with_whisper(audio_b64):
         status = prediction["status"]
 
     if status == "succeeded":
-        print("✅ Transcription complete!")
-        return [
-            {
-                "start": int(s["start"]),
-                "end": int(s["end"]),
-                "text": s["text"]
-            } for s in prediction["output"]["segments"]
-        ]
-    else:
-        print("❌ Transcription failed:", prediction)
-        return []
+        return prediction["output"]["segments"]
+    return []
 
 def extract_cues(transcript):
     data = []
@@ -141,16 +123,19 @@ async def transcribe(req: TranscriptionRequest):
         token = get_brightcove_token()
         video_url = get_video_source_url(req.videoId, token)
         if not video_url:
-            return {"error": "Video not found or no MP4/MOV available."}
-        audio_b64 = download_and_encode_audio(video_url)
-        transcript = transcribe_with_whisper(audio_b64)
-        if not transcript:
-            return {"error": "Transcription failed."}
+            return {"error": "Video not found or no suitable source."}
+
+        audio_path = f"/tmp/audio_{uuid4().hex}.mp3"
+        extract_audio_from_url(video_url, audio_path)
+        audio_url = upload_temp_file(audio_path)
+        transcript = transcribe_with_whisper(audio_url)
         df = extract_cues(transcript)
+
         filename = f"output_{uuid4().hex}.xlsx"
         filepath = f"/tmp/{filename}"
         df.to_excel(filepath, index=False)
         return {"downloadUrl": f"/api/download/{filename}"}
+
     except Exception as e:
         return {"error": str(e)}
 
